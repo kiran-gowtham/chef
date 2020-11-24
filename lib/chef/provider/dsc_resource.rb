@@ -15,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-require "timeout"
+require "timeout" unless defined?(Timeout)
 require_relative "../mixin/powershell_exec"
 require_relative "../util/dsc/local_configuration_manager"
 require_relative "../mixin/powershell_type_coercions"
