@@ -16,11 +16,13 @@
 # limitations under the License.
 #
 
-require_relative "../powershell/cmdlet"
+require_relative "../../mixin/powershell_exec"
 require_relative "lcm_output_parser"
 
 class Chef::Util::DSC
   class LocalConfigurationManager
+    include Chef::Mixin::PowershellExec
+
     def initialize(node, configuration_path)
       @node = node
       @configuration_path = configuration_path
@@ -29,8 +31,8 @@ class Chef::Util::DSC
 
     def test_configuration(configuration_document, shellout_flags)
       status = run_configuration_cmdlet(configuration_document, false, shellout_flags)
-      log_dsc_exception(status.stderr) unless status.succeeded?
-      configuration_update_required?(status.return_value)
+      log_dsc_exception(status.errors.join("\n")) if status.error?
+      configuration_update_required?(status.result)
     end
 
     def set_configuration(configuration_document, shellout_flags)
@@ -53,11 +55,12 @@ class Chef::Util::DSC
 
       begin
         save_configuration_document(configuration_document)
-        cmdlet = ::Chef::Util::Powershell::Cmdlet.new(@node, lcm_command(apply_configuration))
+        cmd = lcm_command(apply_configuration)
+        Chef::Log.trace("DSC: Calling DSC Local Config Manager with:\n#{cmd}")
+
+        status = powershell_exec_with_shellout_flags(cmd, shellout_flags)
         if apply_configuration
-          status = cmdlet.run!({}, shellout_flags)
-        else
-          status = cmdlet.run({}, shellout_flags)
+          status.error!
         end
       ensure
         end_operation_timing
@@ -70,6 +73,20 @@ class Chef::Util::DSC
       status
     end
 
+    def powershell_exec_with_shellout_flags(cmd, shellout_flags)
+      cwd = shellout_flags[:cwd] || Dir.pwd
+      original_env = ENV.to_hash
+      ENV.update(shellout_flags[:environment] || original_env) 
+      Dir.chdir(cwd) do
+        Timeout.timeout(shellout_flags[:timeout]) do
+          powershell_exec(cmd)
+        end
+      end
+    ensure
+      ENV.clear
+      ENV.update(original_env)
+    end
+
     def lcm_command(apply_configuration)
       common_command_prefix = "$ProgressPreference = 'SilentlyContinue';"
       ps4_base_command = "#{common_command_prefix} Start-DscConfiguration -path #{@configuration_path} -wait -erroraction 'stop' -force"
@@ -77,7 +94,7 @@ class Chef::Util::DSC
         ps4_base_command
       else
         if ps_version_gte_5?
-          "#{common_command_prefix} Test-DscConfiguration -path #{@configuration_path} | format-list"
+          "#{common_command_prefix} Test-DscConfiguration -path #{@configuration_path} | format-list | Out-String"
         else
           ps4_base_command + " -whatif; if (! $?) { exit 1 }"
         end
@@ -100,7 +117,7 @@ class Chef::Util::DSC
     end
 
     def whatif_not_supported?(dsc_exception_output)
-      !! (dsc_exception_output.gsub(/[\r\n]+/, "").gsub(/\s+/, " ") =~ /A parameter cannot be found that matches parameter name 'Whatif'/i)
+      !! (dsc_exception_output.gsub(/[\n]+/, "").gsub(/\s+/, " ") =~ /A parameter cannot be found that matches parameter name 'Whatif'/i)
     end
 
     def dsc_module_import_failure?(command_output)

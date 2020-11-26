@@ -92,7 +92,7 @@ class Chef
         }
 
         begin
-          configuration_document = generate_configuration_document(config_directory, configuration_flags)
+          configuration_document = generate_configuration_document(config_directory, configuration_flags, shellout_flags)
           @operations[operation].call(config_manager, configuration_document, shellout_flags)
         rescue Exception => e
           logger.error("DSC operation failed: #{e.message}")
@@ -111,13 +111,7 @@ class Chef
         updated_flags
       end
 
-      def generate_configuration_document(config_directory, configuration_flags)
-        shellout_flags = {
-          cwd: @dsc_resource.cwd,
-          environment: @dsc_resource.environment,
-          timeout: @dsc_resource.timeout,
-        }
-
+      def generate_configuration_document(config_directory, configuration_flags, shellout_flags)
         generator = Chef::Util::DSC::ConfigurationGenerator.new(@run_context.node, config_directory)
 
         if @dsc_resource.command
