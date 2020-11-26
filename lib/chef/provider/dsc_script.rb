@@ -103,9 +103,9 @@ class Chef
           ::FileUtils.rm_rf(config_directory)
           ENV.clear
           ENV.update(original_env)
-          end
+        end
       end
-  
+
       def get_augmented_configuration_flags(configuration_data_path)
         updated_flags = @dsc_resource.flags.nil? ? {} : @dsc_resource.flags.dup
         if configuration_data_path
