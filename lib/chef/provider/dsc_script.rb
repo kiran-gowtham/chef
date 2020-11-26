@@ -32,11 +32,11 @@ class Chef
         @dsc_resource = dsc_resource
         @resource_converged = false
         @operations = {
-          set: Proc.new do |config_manager, document, shellout_flags|
-            config_manager.set_configuration(document, shellout_flags)
+          set: Proc.new do |config_manager, document|
+            config_manager.set_configuration(document)
           end,
-          test: Proc.new do |config_manager, document, shellout_flags|
-            config_manager.test_configuration(document, shellout_flags)
+          test: Proc.new do |config_manager, document|
+            config_manager.test_configuration(document)
           end }
       end
 
@@ -85,23 +85,40 @@ class Chef
 
         config_manager = Chef::Util::DSC::LocalConfigurationManager.new(@run_context.node, config_directory)
 
-        shellout_flags = {
-          cwd: @dsc_resource.cwd,
-          environment: @dsc_resource.environment,
-          timeout: @dsc_resource.timeout,
-        }
+        cwd = @dsc_resource.cwd || Dir.pwd
+        original_env = ENV.to_hash
 
         begin
-          configuration_document = generate_configuration_document(config_directory, configuration_flags, shellout_flags)
-          @operations[operation].call(config_manager, configuration_document, shellout_flags)
+          ENV.update(@dsc_resource.environment || original_env)
+          Dir.chdir(cwd) do
+            Timeout.timeout(@dsc_resource.timeout) do
+              configuration_document = generate_configuration_document(config_directory, configuration_flags)
+              @operations[operation].call(config_manager, configuration_document)
+            end
+          end
         rescue Exception => e
           logger.error("DSC operation failed: #{e.message}")
           raise e
         ensure
           ::FileUtils.rm_rf(config_directory)
-        end
+          ENV.clear
+          ENV.update(original_env)
+          end
       end
-
+      def powershell_exec_with_shellout_flags!(cmd, shellout_flags)
+        cwd = shellout_flags[:cwd] || Dir.pwd
+        original_env = ENV.to_hash
+        ENV.update(shellout_flags[:environment] || original_env) 
+        Dir.chdir(cwd) do
+          Timeout.timeout(shellout_flags[:timeout]) do
+            powershell_exec!(cmd)
+          end
+        end
+      ensure
+        ENV.clear
+        ENV.update(original_env)
+      end
+  
       def get_augmented_configuration_flags(configuration_data_path)
         updated_flags = @dsc_resource.flags.nil? ? {} : @dsc_resource.flags.dup
         if configuration_data_path
@@ -111,15 +128,15 @@ class Chef
         updated_flags
       end
 
-      def generate_configuration_document(config_directory, configuration_flags, shellout_flags)
+      def generate_configuration_document(config_directory, configuration_flags)
         generator = Chef::Util::DSC::ConfigurationGenerator.new(@run_context.node, config_directory)
 
         if @dsc_resource.command
-          generator.configuration_document_from_script_path(@dsc_resource.command, configuration_name, configuration_flags, shellout_flags)
+          generator.configuration_document_from_script_path(@dsc_resource.command, configuration_name, configuration_flags)
         else
           # If code is also not provided, we mimic what the other script resources do (execute nothing)
           logger.warn("Neither code or command were provided for dsc_resource[#{@dsc_resource.name}].") unless @dsc_resource.code
-          generator.configuration_document_from_script_code(@dsc_resource.code || "", configuration_flags, @dsc_resource.imports, shellout_flags)
+          generator.configuration_document_from_script_code(@dsc_resource.code || "", configuration_flags, @dsc_resource.imports)
         end
       end
 

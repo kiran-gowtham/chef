@@ -29,14 +29,14 @@ class Chef::Util::DSC
       clear_execution_time
     end
 
-    def test_configuration(configuration_document, shellout_flags)
-      status = run_configuration_cmdlet(configuration_document, false, shellout_flags)
+    def test_configuration(configuration_document)
+      status = run_configuration_cmdlet(configuration_document, false)
       log_dsc_exception(status.errors.join("\n")) if status.error?
       configuration_update_required?(status.result)
     end
 
-    def set_configuration(configuration_document, shellout_flags)
-      run_configuration_cmdlet(configuration_document, true, shellout_flags)
+    def set_configuration(configuration_document)
+      run_configuration_cmdlet(configuration_document, true)
     end
 
     def last_operation_execution_time_seconds
@@ -47,7 +47,7 @@ class Chef::Util::DSC
 
     private
 
-    def run_configuration_cmdlet(configuration_document, apply_configuration, shellout_flags)
+    def run_configuration_cmdlet(configuration_document, apply_configuration)
       Chef::Log.trace("DSC: Calling DSC Local Config Manager to #{apply_configuration ? "set" : "test"} configuration document.")
 
       start_operation_timing
@@ -58,7 +58,7 @@ class Chef::Util::DSC
         cmd = lcm_command(apply_configuration)
         Chef::Log.trace("DSC: Calling DSC Local Config Manager with:\n#{cmd}")
 
-        status = powershell_exec_with_shellout_flags(cmd, shellout_flags)
+        status = powershell_exec(cmd)
         if apply_configuration
           status.error!
         end
@@ -71,20 +71,6 @@ class Chef::Util::DSC
       end
       Chef::Log.trace("DSC: Completed call to DSC Local Config Manager")
       status
-    end
-
-    def powershell_exec_with_shellout_flags(cmd, shellout_flags)
-      cwd = shellout_flags[:cwd] || Dir.pwd
-      original_env = ENV.to_hash
-      ENV.update(shellout_flags[:environment] || original_env) 
-      Dir.chdir(cwd) do
-        Timeout.timeout(shellout_flags[:timeout]) do
-          powershell_exec(cmd)
-        end
-      end
-    ensure
-      ENV.clear
-      ENV.update(original_env)
     end
 
     def lcm_command(apply_configuration)
