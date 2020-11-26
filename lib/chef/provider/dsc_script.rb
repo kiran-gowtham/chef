@@ -105,19 +105,6 @@ class Chef
           ENV.update(original_env)
           end
       end
-      def powershell_exec_with_shellout_flags!(cmd, shellout_flags)
-        cwd = shellout_flags[:cwd] || Dir.pwd
-        original_env = ENV.to_hash
-        ENV.update(shellout_flags[:environment] || original_env) 
-        Dir.chdir(cwd) do
-          Timeout.timeout(shellout_flags[:timeout]) do
-            powershell_exec!(cmd)
-          end
-        end
-      ensure
-        ENV.clear
-        ENV.update(original_env)
-      end
   
       def get_augmented_configuration_flags(configuration_data_path)
         updated_flags = @dsc_resource.flags.nil? ? {} : @dsc_resource.flags.dup
